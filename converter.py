@@ -1,5 +1,6 @@
 # converter.py
 import os
+from datetime import date
 from markdown import markdown
 from weasyprint import HTML
 from bs4 import BeautifulSoup
@@ -9,7 +10,15 @@ from docx.oxml.ns import qn
 from themes import THEMES
 
 
-def convert_md_to_pdf(md_path, output_dir, theme_name):
+def apply_template(template, filename, index):
+    """Apply output filename template placeholders."""
+    result = template.replace("{filename}", filename)
+    result = result.replace("{date}", date.today().strftime("%Y-%m-%d"))
+    result = result.replace("{index}", f"{index:02d}")
+    return result
+
+
+def convert_md_to_pdf(md_path, output_dir, theme_name, out_name=None):
     """Convert a Markdown file to PDF with selected theme."""
     with open(md_path, 'r', encoding='utf-8') as f:
         md_text = f.read()
@@ -33,15 +42,16 @@ def convert_md_to_pdf(md_path, output_dir, theme_name):
 
     os.makedirs(output_dir, exist_ok=True)
 
-    base_name = os.path.splitext(os.path.basename(md_path))[0]
-    pdf_path = os.path.join(output_dir, base_name + '.pdf')
+    if out_name is None:
+        out_name = os.path.splitext(os.path.basename(md_path))[0]
+    pdf_path = os.path.join(output_dir, out_name + '.pdf')
 
     HTML(string=full_html).write_pdf(pdf_path)
 
     return pdf_path
 
 
-def convert_md_to_docx(md_path, output_dir):
+def convert_md_to_docx(md_path, output_dir, out_name=None):
     """Convert a Markdown file to DOCX with Default-theme-like styling."""
     with open(md_path, 'r', encoding='utf-8') as f:
         md_text = f.read()
@@ -49,8 +59,10 @@ def convert_md_to_docx(md_path, output_dir):
     html_content = markdown(md_text, extensions=['tables', 'fenced_code', 'codehilite', 'toc'])
 
     os.makedirs(output_dir, exist_ok=True)
-    base_name = os.path.splitext(os.path.basename(md_path))[0]
-    docx_path = os.path.join(output_dir, base_name + '.docx')
+
+    if out_name is None:
+        out_name = os.path.splitext(os.path.basename(md_path))[0]
+    docx_path = os.path.join(output_dir, out_name + '.docx')
 
     doc = Document()
 

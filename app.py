@@ -1,16 +1,23 @@
 # app.py
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 from tkinterdnd2 import DND_FILES, TkinterDnD
 import threading
 import queue
 import os
 import sys
 import subprocess
-import re
-from converter import convert_md_to_pdf, convert_md_to_docx
+import json
+import logging
+import logging.handlers
+from datetime import date
+from converter import convert_md_to_pdf, convert_md_to_docx, apply_template
 
-VERSION = "v1.2.0"
+VERSION = "v1.3.0"
+CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".md2pdf_config.json")
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(APP_DIR, "md2pdf.log")
+
 
 def open_file(path):
     """Open a file with the default system viewer."""
@@ -20,6 +27,16 @@ def open_file(path):
         subprocess.call(['open', path])
     else:
         subprocess.call(['xdg-open', path])
+
+
+class GUILogHandler(logging.Handler):
+    def __init__(self, queue):
+        super().__init__()
+        self.queue = queue
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.queue.put(msg)
 
 
 class MarkdownConverterApp:
@@ -33,9 +50,60 @@ class MarkdownConverterApp:
         self.log_queue = queue.Queue()
         self.is_converting = False
 
+        self._setup_logger()
+        self._load_config()
         self._setup_styles()
         self._setup_ui()
+        self._apply_saved_config()
         self._poll_log_queue()
+
+    def _setup_logger(self):
+        self.logger = logging.getLogger("md2pdf")
+        self.logger.setLevel(logging.DEBUG)
+        gui_handler = GUILogHandler(self.log_queue)
+        gui_handler.setFormatter(logging.Formatter("%(message)s"))
+        self.logger.addHandler(gui_handler)
+
+        file_handler = logging.handlers.RotatingFileHandler(
+            LOG_FILE, maxBytes=500 * 1024, backupCount=2, encoding='utf-8'
+        )
+        file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        self.logger.addHandler(file_handler)
+
+    def _load_config(self):
+        self.config = {"recent_files": [], "last_output_dir": "", "last_theme": "Default", "last_format": "PDF"}
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                    saved = json.load(f)
+                    self.config.update(saved)
+            except Exception:
+                pass
+
+    def _save_config(self):
+        try:
+            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2)
+        except Exception:
+            pass
+
+    def _apply_saved_config(self):
+        if self.config.get("last_output_dir"):
+            self.output_var.set(self.config["last_output_dir"])
+        if self.config.get("last_theme"):
+            self.theme_var.set(self.config["last_theme"])
+        if self.config.get("last_format"):
+            self.format_var.set(self.config["last_format"])
+
+    def _update_recent_files(self, md_paths):
+        recent = self.config.get("recent_files", [])
+        for p in md_paths:
+            if p in recent:
+                recent.remove(p)
+            recent.insert(0, p)
+        self.config["recent_files"] = recent[:10]
+        self._save_config()
 
     def _setup_styles(self):
         style = ttk.Style()
@@ -65,6 +133,16 @@ class MarkdownConverterApp:
         style.configure('Opt.TLabel', font=('Segoe UI', 10))
         style.configure('Opt.TCombobox', font=('Segoe UI', 10))
         style.configure('Check.TCheckbutton', font=('Segoe UI', 10))
+        style.configure('Recent.TButton', background='#2E86AB', foreground='white', font=('Segoe UI', 9))
+        style.map('Recent.TButton',
+                  background=[('active', '#1A6A8C'), ('pressed', '#1A6A8C')],
+                  foreground=[('active', 'white'), ('pressed', 'white')])
+        style.configure('SaveLog.TButton', background='#555555', foreground='white', font=('Segoe UI', 9))
+        style.map('SaveLog.TButton',
+                  background=[('active', '#333333'), ('pressed', '#333333')],
+                  foreground=[('active', 'white'), ('pressed', 'white')])
+        style.configure('RecentList.TListbox', background='#1E1E1E', foreground='#D4D4D4',
+                        font=('Consolas', 9), selectbackground='#2E86AB', selectforeground='white')
 
     def _setup_ui(self):
         main_frame = ttk.Frame(self.root, padding=15)
@@ -132,6 +210,7 @@ class MarkdownConverterApp:
         btn_frame.pack(fill='x', padx=10, pady=(0, 10))
 
         ttk.Button(btn_frame, text="Add Files", command=self.add_files).pack(side='left', padx=(0, 5))
+        ttk.Button(btn_frame, text="Recent Files", command=self.show_recent_files, style='Recent.TButton').pack(side='left', padx=(0, 5))
         ttk.Button(btn_frame, text="Remove Selected", command=self.remove_selected).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Clear All", command=self.clear_all).pack(side='left', padx=(5, 0))
 
@@ -154,10 +233,13 @@ class MarkdownConverterApp:
         opts_frame = ttk.Frame(lf)
         opts_frame.pack(fill='x', padx=10, pady=10)
 
-        ttk.Label(opts_frame, text="Theme:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
+        row1 = ttk.Frame(opts_frame)
+        row1.pack(fill='x', pady=(0, 5))
+
+        ttk.Label(row1, text="Theme:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
         self.theme_var = tk.StringVar(value="Default")
         theme_combo = ttk.Combobox(
-            opts_frame,
+            row1,
             textvariable=self.theme_var,
             values=["Default", "Dark", "Academic", "Minimal"],
             state="readonly",
@@ -166,10 +248,10 @@ class MarkdownConverterApp:
         )
         theme_combo.pack(side='left', padx=(0, 15))
 
-        ttk.Label(opts_frame, text="Format:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
+        ttk.Label(row1, text="Format:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
         self.format_var = tk.StringVar(value="PDF")
         format_combo = ttk.Combobox(
-            opts_frame,
+            row1,
             textvariable=self.format_var,
             values=["PDF", "DOCX", "Both"],
             state="readonly",
@@ -180,11 +262,20 @@ class MarkdownConverterApp:
 
         self.open_file_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            opts_frame,
+            row1,
             text="Open file after conversion",
             variable=self.open_file_var,
             style='Check.TCheckbutton'
         ).pack(side='left')
+
+        row2 = ttk.Frame(opts_frame)
+        row2.pack(fill='x')
+
+        ttk.Label(row2, text="Output name:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
+        self.template_var = tk.StringVar(value="{filename}")
+        ttk.Entry(row2, textvariable=self.template_var, width=25, style='OptEntry.TEntry').pack(side='left', padx=(0, 10))
+
+        ttk.Label(row2, text="Placeholders: {filename} {date} {index}", style='Hint.TLabel').pack(side='left')
 
     def _build_convert_section(self, parent, row):
         convert_frame = ttk.Frame(parent)
@@ -212,8 +303,14 @@ class MarkdownConverterApp:
         lf = ttk.LabelFrame(parent, text="CONVERSION LOG", style='Input.TLabelframe')
         lf.grid(row=row, column=0, sticky='nsew', pady=(5, 0))
 
+        log_header = ttk.Frame(lf)
+        log_header.pack(fill='x', padx=10, pady=(10, 0))
+
+        ttk.Label(log_header, text="Log output:", style='Hint.TLabel').pack(side='left')
+        ttk.Button(log_header, text="\U0001F4BE Save Log", command=self.save_log, style='SaveLog.TButton').pack(side='right')
+
         log_frame = ttk.Frame(lf)
-        log_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        log_frame.pack(fill='both', expand=True, padx=10, pady=(5, 10))
 
         self.log_text = tk.Text(
             log_frame,
@@ -237,19 +334,21 @@ class MarkdownConverterApp:
         self.log_text.config(yscrollcommand=log_scroll.set)
 
     def on_drop(self, event):
-        raw = event.data
-        paths = re.findall(r'\{([^}]+)\}|(\S+)', raw)
-        file_paths = [p[0] if p[0] else p[1] for p in paths]
+        try:
+            file_paths = self.root.tk.splitlist(event.data)
+        except Exception:
+            file_paths = event.data.split()
 
         added = 0
         for fp in file_paths:
+            fp = fp.strip()
             if fp.lower().endswith('.md') and fp not in self.files:
                 self.files.append(fp)
                 self.listbox.insert(tk.END, fp)
                 added += 1
 
         if added > 0:
-            self.log(f"[->] Dropped {added} file(s) added.")
+            self.logger.info(f"[->] Dropped {added} file(s) added.")
             self._update_file_count()
         return self.files
 
@@ -290,44 +389,87 @@ class MarkdownConverterApp:
         if folder:
             self.output_var.set(folder)
 
-    def log(self, message):
-        self.log_queue.put(message)
+    def save_log(self):
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt")],
+            title="Save Log"
+        )
+        if not path:
+            return
+        content = self.log_text.get(1.0, tk.END).strip()
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            messagebox.showinfo("Success", f"Log saved to {path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save log: {e}")
 
-    def _poll_log_queue(self):
-        while not self.log_queue.empty():
-            msg = self.log_queue.get()
-            self._append_log(msg)
-        self.root.after(100, self._poll_log_queue)
+    def show_recent_files(self):
+        popup = tk.Toplevel(self.root)
+        popup.title("Recent Files")
+        popup.geometry("500x300")
+        popup.configure(bg='#F7F9FC')
+        popup.transient(self.root)
+        popup.grab_set()
 
-    def _append_log(self, message):
-        self.log_text.config(state='normal')
+        listbox = tk.Listbox(
+            popup,
+            bg='#1E1E1E',
+            fg='#D4D4D4',
+            font=('Consolas', 9),
+            selectbackground='#2E86AB',
+            selectforeground='white',
+            borderwidth=1,
+            relief='solid'
+        )
+        listbox.pack(fill='both', expand=True, padx=10, pady=10)
 
-        if message.startswith('[✔]'):
-            tag = 'success'
-        elif message.startswith('[✘]'):
-            tag = 'error'
-        elif message.startswith('[->]'):
-            tag = 'info'
-        else:
-            tag = None
+        recent = self.config.get("recent_files", [])
+        for fp in recent:
+            listbox.insert(tk.END, fp)
 
-        if tag:
-            self.log_text.insert(tk.END, message + '\n', tag)
-        else:
-            self.log_text.insert(tk.END, message + '\n')
+        btn_frame = ttk.Frame(popup)
+        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
 
-        self.log_text.see(tk.END)
-        self.log_text.config(state='disabled')
+        def add_selected():
+            selected = listbox.curselection()
+            if not selected:
+                return
+            added = 0
+            for idx in selected:
+                fp = listbox.get(idx)
+                if os.path.exists(fp) and fp not in self.files:
+                    self.files.append(fp)
+                    self.listbox.insert(tk.END, fp)
+                    added += 1
+            if added:
+                self._update_file_count()
+            popup.destroy()
+
+        def clear_history():
+            self.config["recent_files"] = []
+            self._save_config()
+            listbox.delete(0, tk.END)
+
+        ttk.Button(btn_frame, text="Add to List", command=add_selected).pack(side='left', padx=(0, 5))
+        ttk.Button(btn_frame, text="Clear History", command=clear_history).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Close", command=popup.destroy).pack(side='right')
 
     def start_conversion(self):
         if self.is_converting:
             return
         if not self.files:
-            self.log("[✘] ERROR: No input files selected.")
+            self.logger.info("[\u2718] ERROR: No input files selected.")
             return
-        output_dir = self.output_var.get()
+        output_dir = self.output_var.get().strip()
         if not output_dir:
-            self.log("[✘] ERROR: No output folder selected.")
+            self.logger.info("[\u2718] ERROR: No output folder selected.")
+            return
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.info(f"[\u2718] ERROR: Cannot create output folder: {e}")
             return
 
         self.is_converting = True
@@ -339,48 +481,59 @@ class MarkdownConverterApp:
 
     def _convert_thread(self):
         theme = self.theme_var.get()
-        output_dir = self.output_var.get()
+        output_dir = self.output_var.get().strip()
         open_after = self.open_file_var.get()
         fmt = self.format_var.get()
+        template = self.template_var.get().strip() or "{filename}"
+
+        self.config["last_output_dir"] = output_dir
+        self.config["last_theme"] = theme
+        self.config["last_format"] = fmt
+        self._save_config()
 
         jobs = []
-        for md_path in self.files[:]:
-            if fmt == "PDF":
-                jobs.append(('pdf', md_path))
-            elif fmt == "DOCX":
-                jobs.append(('docx', md_path))
-            else:
-                jobs.append(('pdf', md_path))
-                jobs.append(('docx', md_path))
+        for idx, md_path in enumerate(self.files[:], start=1):
+            base = os.path.splitext(os.path.basename(md_path))[0]
+            out_name = apply_template(template, base, idx)
+            if fmt in ("PDF", "Both"):
+                jobs.append(('pdf', md_path, out_name))
+            if fmt in ("DOCX", "Both"):
+                jobs.append(('docx', md_path, out_name))
 
         total = len(jobs)
         self.root.after(0, lambda: self.progress.config(maximum=total))
         done = 0
+        converted_files = []
 
-        for job_type, md_path in jobs:
+        for job_type, md_path, out_name in jobs:
             base = os.path.basename(md_path)
             try:
                 if job_type == 'pdf':
-                    self.log(f"[->] Converting {base} to PDF...")
-                    out_path = convert_md_to_pdf(md_path, output_dir, theme)
-                    self.log(f"[✔] {base} \u2192 {os.path.basename(out_path)}")
+                    self.logger.info(f"[->] Converting {base} to PDF...")
+                    out_path = convert_md_to_pdf(md_path, output_dir, theme, out_name)
+                    self.logger.info(f"[\u2714] {base} \u2192 {os.path.basename(out_path)}")
                 elif job_type == 'docx':
-                    self.log(f"[->] Converting {base} to DOCX...")
-                    out_path = convert_md_to_docx(md_path, output_dir)
-                    self.log(f"[✔] {base} \u2192 {os.path.basename(out_path)}")
+                    self.logger.info(f"[->] Converting {base} to DOCX...")
+                    out_path = convert_md_to_docx(md_path, output_dir, out_name)
+                    self.logger.info(f"[\u2714] {base} \u2192 {os.path.basename(out_path)}")
+
+                converted_files.append(md_path)
 
                 if open_after:
-                    self.log(f"[->] Opening {os.path.basename(out_path)}...")
+                    self.logger.info(f"[->] Opening {os.path.basename(out_path)}...")
                     open_file(out_path)
             except Exception as e:
                 ext = job_type.upper()
-                self.log(f"[✘] ERROR converting {base} to {ext}: {str(e)}")
+                self.logger.info(f"[\u2718] ERROR converting {base} to {ext}: {str(e)}")
 
             done += 1
             self.root.after(0, lambda d=done: self.progress.config(value=d))
             self.root.after(0, lambda d=done, t=total: self.progress_label.config(text=f"Progress: {d} / {t} files"))
 
-        self.log("[✔] Conversion complete.")
+        if converted_files:
+            self._update_recent_files(converted_files)
+
+        self.logger.info("[\u2714] Conversion complete.")
         self.root.after(0, self._conversion_done)
 
     def _conversion_done(self):

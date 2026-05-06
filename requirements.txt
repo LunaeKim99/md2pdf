@@ -1,6 +1,7 @@
-# pip install markdown weasyprint python-docx tkinterdnd2 beautifulsoup4
+# pip install markdown weasyprint python-docx tkinterdnd2 beautifulsoup4 pytest
 markdown
 weasyprint
 python-docx
 tkinterdnd2
 beautifulsoup4
+pytest
