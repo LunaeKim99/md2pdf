@@ -333,6 +333,32 @@ class MarkdownConverterApp:
         log_scroll.pack(side='right', fill='y')
         self.log_text.config(yscrollcommand=log_scroll.set)
 
+    def _poll_log_queue(self):
+        while not self.log_queue.empty():
+            msg = self.log_queue.get()
+            self._append_log(msg)
+        self.root.after(100, self._poll_log_queue)
+
+    def _append_log(self, message):
+        self.log_text.config(state='normal')
+
+        if message.startswith('[✔]'):
+            tag = 'success'
+        elif message.startswith('[✘]'):
+            tag = 'error'
+        elif message.startswith('[->]'):
+            tag = 'info'
+        else:
+            tag = None
+
+        if tag:
+            self.log_text.insert(tk.END, message + '\n', tag)
+        else:
+            self.log_text.insert(tk.END, message + '\n')
+
+        self.log_text.see(tk.END)
+        self.log_text.config(state='disabled')
+
     def on_drop(self, event):
         try:
             file_paths = self.root.tk.splitlist(event.data)
