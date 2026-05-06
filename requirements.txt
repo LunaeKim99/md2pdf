@@ -1,2 +1,6 @@
+# pip install markdown weasyprint python-docx tkinterdnd2 beautifulsoup4
 markdown
 weasyprint
+python-docx
+tkinterdnd2
+beautifulsoup4
