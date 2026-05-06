@@ -43,8 +43,10 @@ class MarkdownConverterApp:
     def __init__(self, root):
         self.root = root
         self.root.title(f"MD to PDF / DOCX Converter {VERSION}")
-        self.root.minsize(750, 620)
+        self.root.minsize(950, 560)
+        self.root.geometry("1100x620")
         self.root.configure(bg='#F7F9FC')
+        self.root.resizable(True, True)
 
         self.files = []
         self.log_queue = queue.Queue()
@@ -141,25 +143,47 @@ class MarkdownConverterApp:
         style.map('SaveLog.TButton',
                   background=[('active', '#333333'), ('pressed', '#333333')],
                   foreground=[('active', 'white'), ('pressed', 'white')])
-        style.configure('RecentList.TListbox', background='#1E1E1E', foreground='#D4D4D4',
-                        font=('Consolas', 9), selectbackground='#2E86AB', selectforeground='white')
+        style.configure('ClearLog.TButton', background='#888888', foreground='white', font=('Segoe UI', 9))
+        style.map('ClearLog.TButton',
+                  background=[('active', '#666666'), ('pressed', '#666666')],
+                  foreground=[('active', 'white'), ('pressed', 'white')])
 
     def _setup_ui(self):
         main_frame = ttk.Frame(self.root, padding=15)
         main_frame.pack(fill='both', expand=True)
 
-        for i in range(6):
-            main_frame.grid_rowconfigure(i, weight=0)
-        main_frame.grid_rowconfigure(2, weight=1)
-        main_frame.grid_rowconfigure(5, weight=1)
-        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(0, weight=2, minsize=380)
+        main_frame.grid_columnconfigure(1, weight=3, minsize=460)
+        main_frame.grid_rowconfigure(0, weight=1)
 
-        self._build_header(main_frame, 0)
-        self._build_input_section(main_frame, 1)
-        self._build_output_section(main_frame, 3)
-        self._build_options_section(main_frame, 4)
-        self._build_convert_section(main_frame, 5)
-        self._build_log_section(main_frame, 6)
+        left_frame = ttk.Frame(main_frame, padding=(0, 0, 10, 0))
+        left_frame.grid(row=0, column=0, sticky='nsew')
+
+        right_frame = ttk.Frame(main_frame, padding=(10, 0, 0, 0))
+        right_frame.grid(row=0, column=1, sticky='nsew')
+
+        self._build_left_panel(left_frame)
+        self._build_right_panel(right_frame)
+
+    def _build_left_panel(self, parent):
+        parent.grid_rowconfigure(1, weight=1)
+        parent.grid_columnconfigure(0, weight=1)
+
+        self._build_header(parent, 0)
+        self._build_input_section(parent, 1)
+        self._build_options_section(parent, 2)
+
+    def _build_right_panel(self, parent):
+        parent.grid_rowconfigure(0, weight=1)
+        parent.grid_rowconfigure(2, weight=0)
+        parent.grid_rowconfigure(4, weight=0)
+        parent.grid_columnconfigure(0, weight=1)
+
+        self._build_log_section(parent, 0)
+        ttk.Separator(parent, orient='horizontal').grid(row=1, column=0, sticky='ew', pady=8)
+        self._build_output_section(parent, 2)
+        ttk.Separator(parent, orient='horizontal').grid(row=3, column=0, sticky='ew', pady=8)
+        self._build_convert_section(parent, 4)
 
     def _build_header(self, parent, row):
         header_frame = ttk.Frame(parent)
@@ -172,15 +196,24 @@ class MarkdownConverterApp:
 
     def _build_input_section(self, parent, row):
         lf = ttk.LabelFrame(parent, text="INPUT FILES", style='Input.TLabelframe')
-        lf.grid(row=row, column=0, sticky='nsew', pady=5)
+        lf.grid(row=row, column=0, sticky='nsew', pady=(0, 10))
+        lf.grid_rowconfigure(0, weight=1)
+        lf.grid_columnconfigure(0, weight=1)
 
-        list_frame = ttk.Frame(lf)
-        list_frame.pack(fill='both', expand=True, padx=10, pady=(10, 5))
+        content_frame = ttk.Frame(lf)
+        content_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=(10, 5))
+        content_frame.grid_rowconfigure(0, weight=1)
+        content_frame.grid_columnconfigure(0, weight=1)
+
+        list_frame = ttk.Frame(content_frame)
+        list_frame.grid(row=0, column=0, sticky='nsew')
+        list_frame.grid_rowconfigure(0, weight=1)
+        list_frame.grid_columnconfigure(0, weight=1)
 
         self.listbox = tk.Listbox(
             list_frame,
             selectmode=tk.EXTENDED,
-            height=6,
+            height=10,
             bg='#FFFFFF',
             selectbackground='#2E86AB',
             selectforeground='white',
@@ -188,47 +221,41 @@ class MarkdownConverterApp:
             borderwidth=1,
             relief='solid'
         )
-        self.listbox.pack(side='left', fill='both', expand=True)
+        self.listbox.grid(row=0, column=0, sticky='nsew')
 
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
-        scrollbar.pack(side='right', fill='y')
+        scrollbar.grid(row=0, column=1, sticky='ns')
         self.listbox.config(yscrollcommand=scrollbar.set)
 
         self.listbox.drop_target_register(DND_FILES)
         self.listbox.dnd_bind('<<Drop>>', self.on_drop)
 
-        hint_frame = ttk.Frame(lf)
-        hint_frame.pack(fill='x', padx=10, pady=(0, 5))
+        hint_frame = ttk.Frame(content_frame)
+        hint_frame.grid(row=1, column=0, sticky='ew', pady=(0, 5))
+        hint_frame.grid_columnconfigure(0, weight=1)
+        hint_frame.grid_columnconfigure(1, weight=1)
 
         self.hint_label = ttk.Label(hint_frame, text="\U0001F4A1 Drag & drop .md files here", style='Hint.TLabel')
-        self.hint_label.pack(side='left')
+        self.hint_label.grid(row=0, column=0, sticky='w')
 
         self.count_label = ttk.Label(hint_frame, text="[File count: 0]", style='Count.TLabel')
-        self.count_label.pack(side='right')
+        self.count_label.grid(row=0, column=1, sticky='e')
 
-        btn_frame = ttk.Frame(lf)
-        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
+        btn_frame = ttk.Frame(content_frame)
+        btn_frame.grid(row=2, column=0, sticky='ew')
+        btn_frame.grid_columnconfigure(0, weight=1)
 
-        ttk.Button(btn_frame, text="Add Files", command=self.add_files).pack(side='left', padx=(0, 5))
-        ttk.Button(btn_frame, text="Recent Files", command=self.show_recent_files, style='Recent.TButton').pack(side='left', padx=(0, 5))
-        ttk.Button(btn_frame, text="Remove Selected", command=self.remove_selected).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Clear All", command=self.clear_all).pack(side='left', padx=(5, 0))
+        inner_btn = ttk.Frame(btn_frame)
+        inner_btn.grid(row=0, column=0, sticky='w')
 
-    def _build_output_section(self, parent, row):
-        lf = ttk.LabelFrame(parent, text="OUTPUT FOLDER", style='Input.TLabelframe')
-        lf.grid(row=row, column=0, sticky='ew', pady=5)
-
-        output_frame = ttk.Frame(lf)
-        output_frame.pack(fill='x', padx=10, pady=10)
-
-        self.output_var = tk.StringVar()
-        ttk.Entry(output_frame, textvariable=self.output_var, style='OptEntry.TEntry').pack(
-            side='left', fill='x', expand=True, padx=(0, 5))
-        ttk.Button(output_frame, text="Browse", command=self.browse_output).pack(side='left')
+        ttk.Button(inner_btn, text="Add Files", command=self.add_files).pack(side='left', padx=(0, 5))
+        ttk.Button(inner_btn, text="Remove Selected", command=self.remove_selected).pack(side='left', padx=(0, 5))
+        ttk.Button(inner_btn, text="Recent Files", command=self.show_recent_files, style='Recent.TButton').pack(side='left', padx=(0, 5))
+        ttk.Button(inner_btn, text="Clear All", command=self.clear_all).pack(side='left')
 
     def _build_options_section(self, parent, row):
         lf = ttk.LabelFrame(parent, text="OPTIONS", style='Input.TLabelframe')
-        lf.grid(row=row, column=0, sticky='ew', pady=5)
+        lf.grid(row=row, column=0, sticky='ew', pady=(0, 5))
 
         opts_frame = ttk.Frame(lf)
         opts_frame.pack(fill='x', padx=10, pady=10)
@@ -243,7 +270,7 @@ class MarkdownConverterApp:
             textvariable=self.theme_var,
             values=["Default", "Dark", "Academic", "Minimal"],
             state="readonly",
-            width=14,
+            width=16,
             style='Opt.TCombobox'
         )
         theme_combo.pack(side='left', padx=(0, 15))
@@ -255,10 +282,10 @@ class MarkdownConverterApp:
             textvariable=self.format_var,
             values=["PDF", "DOCX", "Both"],
             state="readonly",
-            width=10,
+            width=16,
             style='Opt.TCombobox'
         )
-        format_combo.pack(side='left', padx=(0, 20))
+        format_combo.pack(side='left', padx=(0, 10))
 
         self.open_file_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
@@ -269,17 +296,67 @@ class MarkdownConverterApp:
         ).pack(side='left')
 
         row2 = ttk.Frame(opts_frame)
-        row2.pack(fill='x')
+        row2.pack(fill='x', pady=(0, 3))
 
         ttk.Label(row2, text="Output name:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
         self.template_var = tk.StringVar(value="{filename}")
-        ttk.Entry(row2, textvariable=self.template_var, width=25, style='OptEntry.TEntry').pack(side='left', padx=(0, 10))
+        ttk.Entry(row2, textvariable=self.template_var, width=28, style='OptEntry.TEntry').pack(side='left', padx=(0, 10))
 
         ttk.Label(row2, text="Placeholders: {filename} {date} {index}", style='Hint.TLabel').pack(side='left')
 
+    def _build_log_section(self, parent, row):
+        lf = ttk.LabelFrame(parent, text="CONVERSION LOG", style='Input.TLabelframe')
+        lf.grid(row=row, column=0, sticky='nsew')
+        lf.grid_rowconfigure(0, weight=1)
+        lf.grid_columnconfigure(0, weight=1)
+
+        log_inner = ttk.Frame(lf)
+        log_inner.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
+        log_inner.grid_rowconfigure(0, weight=1)
+        log_inner.grid_columnconfigure(0, weight=1)
+
+        self.log_text = tk.Text(
+            log_inner,
+            height=15,
+            state='disabled',
+            bg='#1E1E1E',
+            fg='#D4D4D4',
+            font=('Consolas', 9),
+            borderwidth=1,
+            relief='solid',
+            insertbackground='#D4D4D4'
+        )
+        self.log_text.grid(row=0, column=0, columnspan=2, sticky='nsew')
+
+        self.log_text.tag_config('success', foreground='#4EC94E')
+        self.log_text.tag_config('error', foreground='#FF6B6B')
+        self.log_text.tag_config('info', foreground='#FFD700')
+
+        log_scroll = ttk.Scrollbar(log_inner, orient=tk.VERTICAL, command=self.log_text.yview)
+        log_scroll.grid(row=0, column=2, sticky='ns')
+        self.log_text.config(yscrollcommand=log_scroll.set)
+
+        log_btn_frame = ttk.Frame(log_inner)
+        log_btn_frame.grid(row=1, column=0, columnspan=3, sticky='ew', pady=(8, 0))
+
+        ttk.Button(log_btn_frame, text="\U0001F4BE Save Log", command=self.save_log, style='SaveLog.TButton').pack(side='left')
+        ttk.Button(log_btn_frame, text="Clear Log", command=self.clear_log, style='ClearLog.TButton').pack(side='right')
+
+    def _build_output_section(self, parent, row):
+        lf = ttk.LabelFrame(parent, text="OUTPUT FOLDER", style='Input.TLabelframe')
+        lf.grid(row=row, column=0, sticky='ew')
+
+        output_frame = ttk.Frame(lf)
+        output_frame.pack(fill='x', padx=10, pady=10)
+
+        self.output_var = tk.StringVar()
+        ttk.Entry(output_frame, textvariable=self.output_var, style='OptEntry.TEntry').pack(
+            side='left', fill='x', expand=True, padx=(0, 5))
+        ttk.Button(output_frame, text="Browse", command=self.browse_output).pack(side='left')
+
     def _build_convert_section(self, parent, row):
         convert_frame = ttk.Frame(parent)
-        convert_frame.grid(row=row, column=0, sticky='ew', pady=10)
+        convert_frame.grid(row=row, column=0, sticky='ew')
 
         self.convert_btn = ttk.Button(
             convert_frame,
@@ -287,7 +364,7 @@ class MarkdownConverterApp:
             command=self.start_conversion,
             style='Convert.TButton'
         )
-        self.convert_btn.pack(fill='x', ipady=8)
+        self.convert_btn.pack(fill='x', ipady=10)
 
         self.progress = ttk.Progressbar(
             convert_frame,
@@ -298,40 +375,6 @@ class MarkdownConverterApp:
 
         self.progress_label = ttk.Label(convert_frame, text="Progress: 0 / 0 files", style='Count.TLabel')
         self.progress_label.pack(anchor='w')
-
-    def _build_log_section(self, parent, row):
-        lf = ttk.LabelFrame(parent, text="CONVERSION LOG", style='Input.TLabelframe')
-        lf.grid(row=row, column=0, sticky='nsew', pady=(5, 0))
-
-        log_header = ttk.Frame(lf)
-        log_header.pack(fill='x', padx=10, pady=(10, 0))
-
-        ttk.Label(log_header, text="Log output:", style='Hint.TLabel').pack(side='left')
-        ttk.Button(log_header, text="\U0001F4BE Save Log", command=self.save_log, style='SaveLog.TButton').pack(side='right')
-
-        log_frame = ttk.Frame(lf)
-        log_frame.pack(fill='both', expand=True, padx=10, pady=(5, 10))
-
-        self.log_text = tk.Text(
-            log_frame,
-            height=8,
-            state='disabled',
-            bg='#1E1E1E',
-            fg='#D4D4D4',
-            font=('Consolas', 9),
-            borderwidth=1,
-            relief='solid',
-            insertbackground='#D4D4D4'
-        )
-        self.log_text.pack(side='left', fill='both', expand=True)
-
-        self.log_text.tag_config('success', foreground='#4EC94E')
-        self.log_text.tag_config('error', foreground='#FF6B6B')
-        self.log_text.tag_config('info', foreground='#FFD700')
-
-        log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
-        log_scroll.pack(side='right', fill='y')
-        self.log_text.config(yscrollcommand=log_scroll.set)
 
     def _poll_log_queue(self):
         while not self.log_queue.empty():
@@ -357,6 +400,11 @@ class MarkdownConverterApp:
             self.log_text.insert(tk.END, message + '\n')
 
         self.log_text.see(tk.END)
+        self.log_text.config(state='disabled')
+
+    def clear_log(self):
+        self.log_text.config(state='normal')
+        self.log_text.delete('1.0', tk.END)
         self.log_text.config(state='disabled')
 
     def on_drop(self, event):
