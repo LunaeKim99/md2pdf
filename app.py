@@ -61,6 +61,11 @@ class MarkdownConverterApp:
                         background='#2E86AB',
                         thickness=20)
 
+        style.configure('OptEntry.TEntry', font=('Segoe UI', 10))
+        style.configure('Opt.TLabel', font=('Segoe UI', 10))
+        style.configure('Opt.TCombobox', font=('Segoe UI', 10))
+        style.configure('Check.TCheckbutton', font=('Segoe UI', 10))
+
     def _setup_ui(self):
         main_frame = ttk.Frame(self.root, padding=15)
         main_frame.pack(fill='both', expand=True)
@@ -138,7 +143,7 @@ class MarkdownConverterApp:
         output_frame.pack(fill='x', padx=10, pady=10)
 
         self.output_var = tk.StringVar()
-        ttk.Entry(output_frame, textvariable=self.output_var, font=('Segoe UI', 10)).pack(
+        ttk.Entry(output_frame, textvariable=self.output_var, style='OptEntry.TEntry').pack(
             side='left', fill='x', expand=True, padx=(0, 5))
         ttk.Button(output_frame, text="Browse", command=self.browse_output).pack(side='left')
 
@@ -149,7 +154,7 @@ class MarkdownConverterApp:
         opts_frame = ttk.Frame(lf)
         opts_frame.pack(fill='x', padx=10, pady=10)
 
-        ttk.Label(opts_frame, text="Theme:", font=('Segoe UI', 10)).pack(side='left', padx=(0, 5))
+        ttk.Label(opts_frame, text="Theme:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
         self.theme_var = tk.StringVar(value="Default")
         theme_combo = ttk.Combobox(
             opts_frame,
@@ -157,11 +162,11 @@ class MarkdownConverterApp:
             values=["Default", "Dark", "Academic", "Minimal"],
             state="readonly",
             width=14,
-            font=('Segoe UI', 10)
+            style='Opt.TCombobox'
         )
         theme_combo.pack(side='left', padx=(0, 15))
 
-        ttk.Label(opts_frame, text="Format:", font=('Segoe UI', 10)).pack(side='left', padx=(0, 5))
+        ttk.Label(opts_frame, text="Format:", style='Opt.TLabel').pack(side='left', padx=(0, 5))
         self.format_var = tk.StringVar(value="PDF")
         format_combo = ttk.Combobox(
             opts_frame,
@@ -169,7 +174,7 @@ class MarkdownConverterApp:
             values=["PDF", "DOCX", "Both"],
             state="readonly",
             width=10,
-            font=('Segoe UI', 10)
+            style='Opt.TCombobox'
         )
         format_combo.pack(side='left', padx=(0, 20))
 
@@ -178,7 +183,7 @@ class MarkdownConverterApp:
             opts_frame,
             text="Open file after conversion",
             variable=self.open_file_var,
-            font=('Segoe UI', 10)
+            style='Check.TCheckbutton'
         ).pack(side='left')
 
     def _build_convert_section(self, parent, row):
